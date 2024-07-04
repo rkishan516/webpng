@@ -1,12 +1,10 @@
 import 'dart:io';
-import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
 import 'package:image_size_getter/file_input.dart';
 import 'package:image_size_getter/image_size_getter.dart' hide Size;
-import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 
 void main() {
@@ -20,20 +18,18 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'Flutter Image Resize',
+      title: 'WebPng',
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
         useMaterial3: true,
       ),
-      home: const MyHomePage(title: 'Flutter Image Resize'),
+      home: const MyHomePage(),
     );
   }
 }
 
 class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
-
-  final String title;
+  const MyHomePage({super.key});
 
   @override
   State<MyHomePage> createState() => _MyHomePageState();
@@ -150,7 +146,6 @@ class _MyHomePageState extends State<MyHomePage> {
                 return;
               }
               for (var image in images) {
-                var size = ImageSizeGetter.getSize(FileInput(File(image.path)));
                 final splittedPath = image.path.split('/');
                 final x2Path = (List.from(splittedPath)
                       ..insert(splittedPath.length - 1, '2x'))
@@ -158,9 +153,6 @@ class _MyHomePageState extends State<MyHomePage> {
                 final x3Path = (List.from(splittedPath)
                       ..insert(splittedPath.length - 1, '3x'))
                     .join('/');
-                if (File(x3Path).existsSync()) {
-                  size = ImageSizeGetter.getSize(FileInput(File(x3Path)));
-                }
 
                 final Directory tempDir = await getTemporaryDirectory();
                 await image.saveTo('${tempDir.path}/1x.webp');
@@ -418,8 +410,9 @@ extension FileSizeExtensions on num {
             .toStringAsFixed(round);
 
     //Check if the result ends with .00000 (depending on how many decimals) and remove it if found.
-    if (result.endsWith("0" * round))
+    if (result.endsWith("0" * round)) {
       result = result.substring(0, result.length - round - 1);
+    }
 
     return "$result ${affixes[affix]}";
   }
@@ -512,7 +505,6 @@ class _ImageGroupViewConvertToWebpState
               ).then((e) {
                 setState(() {});
               });
-              ;
             }
             if (widget.imageGroup.mainImage3x != null) {
               Process.run(
@@ -522,7 +514,6 @@ class _ImageGroupViewConvertToWebpState
               ).then((e) {
                 setState(() {});
               });
-              ;
             }
             widget.onNewQuality
                 .call(widget.imageGroup.copyWith(quality: value.toInt()));
