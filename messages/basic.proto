@@ -1,0 +1,14 @@
+syntax = "proto3";
+package basic;
+
+// [DART-SIGNAL]
+message ConvertableImages {
+  repeated string paths = 1;
+  float quality = 2;
+}
+
+// [RUST-SIGNAL]
+message ConversionCompletionSignal { string input = 1; bytes output = 2; }
+
+// [RUST-SIGNAL]
+message ConversionFailureSignal { string input = 1; string error = 2; }

@@ -1,14 +1,43 @@
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_image_resize/multiple_image_creator.dart';
 import 'package:flutter_image_resize/resizer.dart';
 import 'package:flutter_image_resize/webp_coverter.dart';
+import 'package:rinf/rinf.dart';
+import './messages/all.dart';
 
-void main() {
+void main() async {
+  await initializeRust(assignRustSignal);
   runApp(const MyApp());
 }
 
-class MyApp extends StatelessWidget {
+class MyApp extends StatefulWidget {
   const MyApp({super.key});
+
+  @override
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> {
+  late final AppLifecycleListener _listener;
+
+  @override
+  void initState() {
+    super.initState();
+    _listener = AppLifecycleListener(
+      onExitRequested: () async {
+        finalizeRust(); // Shut down the `tokio` Rust runtime.
+        return AppExitResponse.exit;
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    _listener.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {

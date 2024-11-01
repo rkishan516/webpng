@@ -43,3 +43,10 @@ app.*.map.json
 /android/app/release
 
 /dmg_creator/*.dmg
+
+# Rust related
+.cargo/
+target/
+
+# Generated messages
+*/**/messages/

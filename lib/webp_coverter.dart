@@ -1,8 +1,12 @@
+import 'dart:async';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_image_resize/messages/all.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:path_provider/path_provider.dart';
+import 'package:rinf/rinf.dart';
+import 'package:path/path.dart' as p;
 
 class WebpConverter extends StatefulWidget {
   const WebpConverter({super.key});
@@ -12,8 +16,28 @@ class WebpConverter extends StatefulWidget {
 }
 
 class _WebpConverterState extends State<WebpConverter> {
+  late StreamSubscription<RustSignal<ConversionCompletionSignal>> subscription;
   final List<ConvertImageGroup> imagesToConvertToWebp = [];
   final imagePicker = ImagePicker();
+  @override
+  void initState() {
+    super.initState();
+    subscription = ConversionCompletionSignal.rustSignalStream.listen((d) {
+      final indexOfConvertGroup = imagesToConvertToWebp
+          .indexWhere((e) => e.indexOf(d.message.input) != -1);
+      if (indexOfConvertGroup == -1) return;
+      final imageIndex =
+          imagesToConvertToWebp[indexOfConvertGroup].indexOf(d.message.input);
+      imagesToConvertToWebp[indexOfConvertGroup].buffers[imageIndex] =
+          Uint8List.fromList(d.message.output);
+    });
+  }
+
+  @override
+  void dispose() {
+    subscription.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -49,48 +73,16 @@ class _WebpConverterState extends State<WebpConverter> {
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () async {
-          final List<XFile> images = await imagePicker.pickMultiImage();
-          if (images.isEmpty) {
-            return;
-          }
-          for (var image in images) {
-            final splittedPath = image.path.split('/');
-            final x2Path = (List.from(splittedPath)
-                  ..insert(splittedPath.length - 1, '2x'))
-                .join('/');
-            final x3Path = (List.from(splittedPath)
-                  ..insert(splittedPath.length - 1, '3x'))
-                .join('/');
+          final List<XFile> images = await imagePicker.pickMultiImage(limit: 3);
+          if (images.isEmpty) return;
 
-            final Directory tempDir = await getTemporaryDirectory();
-            await image.saveTo('${tempDir.path}/1x.webp');
-            if (File(x2Path).existsSync()) {
-              Process.runSync(
-                'cwebp',
-                '-q 75 $x2Path -o ${tempDir.path}/2x.webp'.split(' '),
-              );
-            }
-
-            if (File(x3Path).existsSync()) {
-              Process.runSync(
-                'cwebp',
-                '-q 75 $x3Path -o ${tempDir.path}/3x.webp'.split(' '),
-              );
-            }
-
-            final imageGroup = ConvertImageGroup(
-              mainImage1x: image.path,
-              mainImage2x: File(x2Path).existsSync() ? x2Path : null,
-              mainImage3x: File(x3Path).existsSync() ? x3Path : null,
-              tempImage1x: '${tempDir.path}/1x.webp',
-              tempImage2x:
-                  File(x2Path).existsSync() ? '${tempDir.path}/2x.webp' : null,
-              tempImage3x:
-                  File(x3Path).existsSync() ? '${tempDir.path}/3x.webp' : null,
-            );
+          final imageGroup = ConvertImageGroup(
+            paths: images.map((e) => e.path).toList(),
+          );
+          await imageGroup.load();
+          setState(() {
             imagesToConvertToWebp.add(imageGroup);
-            setState(() {});
-          }
+          });
         },
         tooltip: 'Pick File',
         child: const Icon(Icons.file_copy),
@@ -151,85 +143,36 @@ class ImageGroupViewConvertToWebp extends StatefulWidget {
 
 class _ImageGroupViewConvertToWebpState
     extends State<ImageGroupViewConvertToWebp> {
-  void _saveImage({
-    required BuildContext context,
-    required String filePath,
-    required double qualtiy,
-  }) {
-    Process.runSync(
-        'cwebp',
-        '-q $qualtiy $filePath -o ${filePath.replaceAll('.png', '.webp')}'
-            .split(' '));
-    File(filePath).deleteSync();
-    return;
-  }
-
   @override
   Widget build(BuildContext context) {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text(
-          widget.imageGroup.mainImage1x,
-        ),
         SizedBox(
-          height: 100,
+          height: 300,
           child: Row(
-            children: [
-              Image.file(
-                File(widget.imageGroup.mainImage1x),
-              ),
-              if (widget.imageGroup.mainImage2x != null)
-                Image.file(
-                  File(widget.imageGroup.mainImage2x!),
-                ),
-              if (widget.imageGroup.mainImage3x != null)
-                Image.file(File(widget.imageGroup.mainImage3x!))
-            ].map((e) => Expanded(child: Center(child: e))).toList(),
+            children: widget.imageGroup.buffers.indexed
+                .map((e) {
+                  return Column(
+                    children: [
+                      Expanded(child: Image.memory(e.$2)),
+                      Text(p.basename(widget.imageGroup.paths[e.$1]))
+                    ],
+                  );
+                })
+                .map((e) => Expanded(child: Center(child: e)))
+                .toList(),
           ),
-        ),
-        Row(
-          children: [
-            Text(
-                'Size 1x : ${File(widget.imageGroup.tempImage1x).lengthSync().toHumanReadableFileSize()}'),
-            if (widget.imageGroup.tempImage2x != null)
-              Text(
-                  'Size 2x : ${File(widget.imageGroup.tempImage2x!).lengthSync().toHumanReadableFileSize()}'),
-            if (widget.imageGroup.tempImage3x != null)
-              Text(
-                  'Size 3x : ${File(widget.imageGroup.tempImage3x!).lengthSync().toHumanReadableFileSize()}')
-          ].map((e) => Expanded(child: Center(child: e))).toList(),
         ),
         Slider(
           value: widget.imageGroup.quality.toDouble(),
           max: 100,
           min: 0,
           onChanged: (value) {
-            Process.run(
-              'cwebp',
-              '-q $value ${widget.imageGroup.mainImage1x} -o ${widget.imageGroup.tempImage1x}'
-                  .split(' '),
-            ).then((e) {
-              setState(() {});
-            });
-            if (widget.imageGroup.mainImage2x != null) {
-              Process.run(
-                'cwebp',
-                '-q $value ${widget.imageGroup.mainImage2x} -o ${widget.imageGroup.tempImage2x}'
-                    .split(' '),
-              ).then((e) {
-                setState(() {});
-              });
-            }
-            if (widget.imageGroup.mainImage3x != null) {
-              Process.run(
-                'cwebp',
-                '-q $value ${widget.imageGroup.mainImage3x} -o ${widget.imageGroup.tempImage3x}'
-                    .split(' '),
-              ).then((e) {
-                setState(() {});
-              });
-            }
+            ConvertableImages(
+              paths: widget.imageGroup.paths,
+              quality: value,
+            ).sendSignalToRust();
             widget.onNewQuality
                 .call(widget.imageGroup.copyWith(quality: value.toInt()));
           },
@@ -237,25 +180,7 @@ class _ImageGroupViewConvertToWebpState
         ElevatedButton(
           child: const Text('Save Images'),
           onPressed: () async {
-            _saveImage(
-              context: context,
-              filePath: widget.imageGroup.mainImage1x,
-              qualtiy: widget.imageGroup.quality.toDouble(),
-            );
-            if (widget.imageGroup.mainImage2x != null) {
-              _saveImage(
-                context: context,
-                filePath: widget.imageGroup.mainImage2x!,
-                qualtiy: widget.imageGroup.quality.toDouble(),
-              );
-            }
-            if (widget.imageGroup.mainImage3x != null) {
-              _saveImage(
-                context: context,
-                filePath: widget.imageGroup.mainImage3x!,
-                qualtiy: widget.imageGroup.quality.toDouble(),
-              );
-            }
+            widget.imageGroup.save();
             widget.onSave.call();
           },
         ),
@@ -265,42 +190,42 @@ class _ImageGroupViewConvertToWebpState
 }
 
 class ConvertImageGroup {
-  final String mainImage1x;
-  final String? mainImage2x;
-  final String? mainImage3x;
-
-  final String tempImage1x;
-  final String? tempImage2x;
-  final String? tempImage3x;
+  final List<String> paths;
+  late List<Uint8List> buffers;
 
   final int quality;
 
-  const ConvertImageGroup({
-    required this.mainImage1x,
-    this.mainImage2x,
-    this.mainImage3x,
+  ConvertImageGroup({
+    required this.paths,
     this.quality = 75,
-    required this.tempImage1x,
-    this.tempImage2x,
-    this.tempImage3x,
+    this.buffers = const [],
   });
 
+  Future<void> load() async {
+    buffers = await Future.wait(paths.map((e) => File(e).readAsBytes()));
+  }
+
+  Future<void> save() async {
+    if (paths.length != buffers.length) return;
+    await Future.wait([
+      for (int i = 0; i < paths.length; i++)
+        File(paths[i].replaceFirst('.png', '.webp')).writeAsBytes(buffers[i]),
+      for (int i = 0; i < paths.length; i++) File(paths[i]).delete(),
+    ]);
+  }
+
+  int indexOf(String filename) {
+    return paths.indexOf(filename);
+  }
+
   ConvertImageGroup copyWith({
-    String? mainImage1x,
-    String? mainImage2x,
-    String? mainImage3x,
-    String? tempImage1x,
-    String? tempImage2x,
-    String? tempImage3x,
+    List<String>? paths,
+    List<Uint8List>? buffers,
     int? quality,
   }) {
     return ConvertImageGroup(
-      mainImage1x: mainImage1x ?? this.mainImage1x,
-      mainImage2x: mainImage2x ?? this.mainImage2x,
-      mainImage3x: mainImage3x ?? this.mainImage3x,
-      tempImage1x: tempImage1x ?? this.tempImage1x,
-      tempImage2x: tempImage2x ?? this.tempImage2x,
-      tempImage3x: tempImage3x ?? this.tempImage3x,
+      paths: paths ?? this.paths,
+      buffers: buffers ?? this.buffers,
       quality: quality ?? this.quality,
     );
   }

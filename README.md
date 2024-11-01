@@ -14,7 +14,6 @@ Welcome to webpng! This app is designed to simplify the process of resizing imag
 2. Set Your Preferences: Choose the desired dimensions.
 3. Process: Click the Resize button and let webpng handle the rest.
 
-
 ### How to convert png to webp
 1. Upload Your Image(s): Select the 1x images you want to convert.
 2. Set Your Preferences: Choose the desired loss for webp.
