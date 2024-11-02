@@ -1,8 +1,10 @@
 //! This `hub` crate is the
 //! entry point of the Rust logic.
 
+
 mod messages;
 mod transform_to_webp;
+mod resize_image;
 
 // Uncomment below to target the web.
 // use tokio_with_wasm::alias as tokio;
@@ -17,6 +19,7 @@ async fn main() {
     // If you must use blocking code, use `tokio::task::spawn_blocking`
     // or the equivalent provided by your async library.
     tokio::spawn(transform_to_webp::transform_to_webp_listener());
+    tokio::spawn(resize_image::resize_image_listener());
 
     // Keep the main function running until Dart shutdown.
     rinf::dart_shutdown().await;

@@ -1,11 +1,14 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_image_resize/messages/basic.pb.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:image_size_getter/file_input.dart';
 import 'package:image_size_getter/image_size_getter.dart' hide Size;
 
-import 'package:image/image.dart' as img;
+import 'package:path/path.dart' as p;
+import 'package:rinf/rinf.dart';
 
 class Resizer extends StatefulWidget {
   const Resizer({super.key});
@@ -15,8 +18,38 @@ class Resizer extends StatefulWidget {
 }
 
 class _ResizerState extends State<Resizer> {
-  final List<ImageGroup> images = [];
+  late StreamSubscription<RustSignal> completionSubscription,
+      failureSubscription;
+  List<ImageGroup> images = [];
   final imagePicker = ImagePicker();
+
+  @override
+  void initState() {
+    super.initState();
+    completionSubscription =
+        ResizeCompletionSignal.rustSignalStream.listen((d) {
+      setState(() {
+        images = images
+            .where(
+              (e) => !e.paths.contains(d.message.input),
+            )
+            .toList();
+      });
+    });
+    failureSubscription = ResizeFailureSignal.rustSignalStream.listen((e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message.error)),
+      );
+    });
+  }
+
+  @override
+  void dispose() {
+    completionSubscription.cancel();
+    failureSubscription.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -41,43 +74,28 @@ class _ResizerState extends State<Resizer> {
                       images[index] = imageGroup;
                     });
                   },
-                  onSave: () {
-                    images.removeAt(index);
-                    setState(() {});
-                  },
                 );
               });
         }),
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () async {
-          final List<XFile> images = await imagePicker.pickMultiImage();
+          final List<XFile> images = await imagePicker.pickMultiImage(limit: 3);
           if (images.isEmpty) {
             return;
           }
-          for (var image in images) {
-            var size = ImageSizeGetter.getSize(FileInput(File(image.path)));
-            final splittedPath = image.path.split('/');
-            final x2Path = (List.from(splittedPath)
-                  ..insert(splittedPath.length - 1, '2x'))
-                .join('/');
-            final x3Path = (List.from(splittedPath)
-                  ..insert(splittedPath.length - 1, '3x'))
-                .join('/');
-            if (File(x3Path).existsSync()) {
-              size = ImageSizeGetter.getSize(FileInput(File(x3Path)));
-            }
 
-            final imageGroup = ImageGroup(
-              mainImage1x: image.path,
-              originalSize3x:
-                  Size(size.width.toDouble(), size.height.toDouble()),
-              mainImage2x: File(x2Path).existsSync() ? x2Path : null,
-              mainImage3x: File(x3Path).existsSync() ? x3Path : null,
-            );
+          final size = ImageSizeGetter.getSize(
+            FileInput(File(images.last.path)),
+          );
+
+          final imageGroup = ImageGroup(
+            paths: images.map((e) => e.path).toList(),
+            originalSize: Size(size.width.toDouble(), size.height.toDouble()),
+          );
+          setState(() {
             this.images.add(imageGroup);
-            setState(() {});
-          }
+          });
         },
         tooltip: 'Pick File',
         child: const Icon(Icons.file_copy),
@@ -91,102 +109,66 @@ class ImageGroupViewResize extends StatelessWidget {
     super.key,
     required this.imageGroup,
     required this.onNewSize,
-    required this.onSave,
   });
   final ImageGroup imageGroup;
   final void Function(ImageGroup) onNewSize;
-  final void Function() onSave;
-
-  Future<void> _saveImage({
-    required BuildContext context,
-    required String filePath,
-    required double widthFactor,
-    required double heightFactor,
-  }) async {
-    final file = File(filePath);
-    final imageSize = ImageSizeGetter.getSize(FileInput(file));
-    final size = Size(imageSize.width.toDouble(), imageSize.height.toDouble());
-    img.Image? image = await img.decodeWebPFile(filePath);
-    if (image == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Decoding image failed, return null image'),
-        ),
-      );
-      return;
-    }
-    img.Image resizedImage = img.copyResize(
-      image,
-      width: (size.width * widthFactor).toInt(),
-      height: (size.height * heightFactor).toInt(),
-    );
-
-    await img.encodePngFile(filePath.replaceAll('.webp', '.png'), resizedImage);
-    // Process.runSync(
-    //     'cwebp',
-    //     '-q 100 ${filePath.replaceAll('.webp', '.png')} -o $filePath'
-    //         .split(' '));
-    // File(filePath.replaceAll('.webp', '.png')).deleteSync();
-    return;
-  }
 
   @override
   Widget build(BuildContext context) {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text(
-          imageGroup.mainImage1x,
-        ),
         SizedBox(
           height: 300,
           child: Row(
-            children: [
-              Image.file(
-                File(imageGroup.mainImage1x),
-              ),
-              if (imageGroup.mainImage2x != null)
-                Image.file(
-                  File(imageGroup.mainImage2x!),
-                ),
-              if (imageGroup.mainImage3x != null)
-                Image.file(File(imageGroup.mainImage3x!))
-            ].map((e) => Expanded(child: e)).toList(),
+            children: imageGroup.paths
+                .map(
+                  (e) => Column(
+                    children: [
+                      Expanded(child: Image.file(File(e))),
+                      Text(p.basename(e))
+                    ],
+                  ),
+                )
+                .map(
+                  (e) => Expanded(
+                    child: Center(child: e),
+                  ),
+                )
+                .toList(),
           ),
         ),
         const Text(
-          'Sizes for 3x if available',
+          'Sizes for last choosen image',
         ),
         Text(
-            'Width: ${imageGroup.originalSize3x.width} - Height: ${imageGroup.originalSize3x.height}'),
+            'Width: ${imageGroup.originalSize.width} - Height: ${imageGroup.originalSize.height}'),
         Text(
-            'New Width: ${imageGroup.newSize3x?.width.toInt()} - New Height: ${imageGroup.newSize3x?.height.toInt()}'),
+            'New Width: ${imageGroup.newSize?.width.toInt()} - New Height: ${imageGroup.newSize?.height.toInt()}'),
         Slider(
-          value: imageGroup.newSize3x?.width ?? imageGroup.originalSize3x.width,
-          max: imageGroup.originalSize3x.width,
+          value: imageGroup.newSize?.width ?? imageGroup.originalSize.width,
+          max: imageGroup.originalSize.width,
           min: 0,
           onChanged: (value) {
             onNewSize.call(
               imageGroup.copyWith(
-                newSize3x: Size(
+                newSize: Size(
                   value.toDouble(),
-                  imageGroup.originalSize3x.height,
+                  imageGroup.newSize?.height ?? imageGroup.originalSize.height,
                 ),
               ),
             );
           },
         ),
         Slider(
-          value:
-              imageGroup.newSize3x?.height ?? imageGroup.originalSize3x.height,
-          max: imageGroup.originalSize3x.height,
+          value: imageGroup.newSize?.height ?? imageGroup.originalSize.height,
+          max: imageGroup.originalSize.height,
           min: 0,
           onChanged: (value) {
             onNewSize.call(
               imageGroup.copyWith(
-                newSize3x: Size(
-                  imageGroup.newSize3x?.width ??
-                      imageGroup.originalSize3x.width,
+                newSize: Size(
+                  imageGroup.newSize?.width ?? imageGroup.originalSize.width,
                   value.toDouble(),
                 ),
               ),
@@ -196,45 +178,19 @@ class ImageGroupViewResize extends StatelessWidget {
         ElevatedButton(
           child: const Text('Save Images'),
           onPressed: () async {
-            if (imageGroup.newSize3x == null) {
+            if (imageGroup.newSize == null) {
               ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('New Size is null'),
-                ),
+                const SnackBar(content: Text('New Size is null')),
               );
               return;
             }
-            await _saveImage(
-              context: context,
-              filePath: imageGroup.mainImage1x,
+            ResizeableImages(
+              paths: imageGroup.paths,
               widthFactor:
-                  imageGroup.newSize3x!.width / imageGroup.originalSize3x.width,
-              heightFactor: imageGroup.newSize3x!.height /
-                  imageGroup.originalSize3x.height,
-            );
-            if (imageGroup.mainImage2x != null) {
-              await _saveImage(
-                // ignore: use_build_context_synchronously
-                context: context,
-                filePath: imageGroup.mainImage2x!,
-                widthFactor: imageGroup.newSize3x!.width /
-                    imageGroup.originalSize3x.width,
-                heightFactor: imageGroup.newSize3x!.height /
-                    imageGroup.originalSize3x.height,
-              );
-            }
-            if (imageGroup.mainImage3x != null) {
-              await _saveImage(
-                // ignore: use_build_context_synchronously
-                context: context,
-                filePath: imageGroup.mainImage3x!,
-                widthFactor: imageGroup.newSize3x!.width /
-                    imageGroup.originalSize3x.width,
-                heightFactor: imageGroup.newSize3x!.height /
-                    imageGroup.originalSize3x.height,
-              );
-            }
-            onSave.call();
+                  imageGroup.newSize!.width / imageGroup.originalSize.width,
+              heightFactor:
+                  imageGroup.newSize!.height / imageGroup.originalSize.height,
+            ).sendSignalToRust();
           },
         ),
       ],
@@ -243,34 +199,26 @@ class ImageGroupViewResize extends StatelessWidget {
 }
 
 class ImageGroup {
-  final String mainImage1x;
-  final String? mainImage2x;
-  final String? mainImage3x;
+  final List<String> paths;
 
-  final Size? newSize3x;
-  final Size originalSize3x;
+  final Size? newSize;
+  final Size originalSize;
 
   const ImageGroup({
-    required this.mainImage1x,
-    required this.originalSize3x,
-    this.mainImage2x,
-    this.mainImage3x,
-    this.newSize3x,
+    required this.paths,
+    required this.originalSize,
+    this.newSize,
   });
 
   ImageGroup copyWith({
-    String? mainImage1x,
-    String? mainImage2x,
-    String? mainImage3x,
-    Size? newSize3x,
-    Size? originalSize3x,
+    List<String>? paths,
+    Size? newSize,
+    Size? originalSize,
   }) {
     return ImageGroup(
-      mainImage1x: mainImage1x ?? this.mainImage1x,
-      mainImage2x: mainImage2x ?? this.mainImage2x,
-      mainImage3x: mainImage3x ?? this.mainImage3x,
-      newSize3x: newSize3x ?? this.newSize3x,
-      originalSize3x: originalSize3x ?? this.originalSize3x,
+      originalSize: originalSize ?? this.originalSize,
+      paths: paths ?? this.paths,
+      newSize: newSize ?? this.newSize,
     );
   }
 }

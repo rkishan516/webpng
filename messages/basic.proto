@@ -12,3 +12,16 @@ message ConversionCompletionSignal { string input = 1; bytes output = 2; }
 
 // [RUST-SIGNAL]
 message ConversionFailureSignal { string input = 1; string error = 2; }
+
+// [DART-SIGNAL]
+message ResizeableImages {
+  repeated string paths = 1;
+  float widthFactor = 2;
+  float heightFactor = 3;
+}
+
+// [RUST-SIGNAL]
+message ResizeCompletionSignal { string input = 1; }
+
+// [RUST-SIGNAL]
+message ResizeFailureSignal { string input = 1; string error = 2; }
