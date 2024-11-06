@@ -3,7 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_image_resize/messages/all.dart';
+import 'package:webpng/messages/all.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:rinf/rinf.dart';
 import 'package:path/path.dart' as p;

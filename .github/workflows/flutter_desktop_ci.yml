@@ -1,0 +1,83 @@
+name: Flutter Desktop CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  build-macos:
+    name: "Build MacOS"
+    runs-on: macos-latest
+
+    steps:
+      # Step 1: Checkout the repository
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # Step 2: Set up Flutter environment
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2.6.1
+        with:
+          channel: stable
+          cache: true
+      - name: Set Up XCode
+        uses: BoundfoxStudios/action-xcode-select@v1
+
+      # Step 3: Install dependencies
+      - name: Install dependencies
+        run: flutter pub get
+      - name: Install rinf
+        run: cargo install rinf
+      - name: Install protobuf
+        run: brew install protobuf
+      
+      - name: Generate messages
+        run: rinf message
+
+      # Step 4: Build the Flutter app for desktop
+      - name: Build Desktop App
+        run: flutter build macos --build-number=${{ github.run_number }}
+      - name: Install create-dmg
+        run: brew install create-dmg
+      - name: Create dmg
+        run: |
+          chmod +x scripts/create_dmg.sh
+          ./scripts/create_dmg.sh
+      - name: Compress artifacts
+        run: zip -r macos-dev.zip build/macos/Build/Products/Release
+
+      # Step 5: Upload build artifacts
+      - name: Upload Build DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: webpng-macos-dev.dmg
+          path: build/macos/Build/Products/Release/webpng.dmg
+      - name: Upload Build Zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: webpng-macos-dev.zip
+          path: macos-dev.zip
+
+      # Step 6: Create Release
+      - name: release
+        uses: ncipollo/release-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag: v1.0.0-${{ github.run_number }}
+          name: "Release ${{ github.run_number }}"
+          draft: false
+          prerelease: false
+          artifacts: |
+            build/macos/Build/Products/Release/webpng.dmg
+            macos-dev.zip
+          artifact_content_type: |
+            application/x-apple-diskimage
+            application/zip

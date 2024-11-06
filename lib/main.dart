@@ -1,9 +1,9 @@
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_image_resize/multiple_image_creator.dart';
-import 'package:flutter_image_resize/resizer.dart';
-import 'package:flutter_image_resize/webp_coverter.dart';
+import 'package:webpng/multiple_image_creator.dart';
+import 'package:webpng/resizer.dart';
+import 'package:webpng/webp_coverter.dart';
 import 'package:rinf/rinf.dart';
 import './messages/all.dart';
 
